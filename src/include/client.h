@@ -3,12 +3,17 @@
 
 #include <iostream>
 #include <utility>
+#include <vector>
+#include <string>
 
 extern int rows;         // The count of rows of the game map.
 extern int columns;      // The count of columns of the game map.
 extern int total_mines;  // The count of mines of the game map.
 
 // You MUST NOT use any other external variables except for rows, columns and total_mines.
+
+// Client-side knowledge of the board
+static std::vector<std::string> g_board;
 
 /**
  * @brief The definition of function Execute(int, int, bool)
@@ -34,9 +39,13 @@ void Execute(int r, int c, int type);
  * will read the scale of the game map and the first step taken by the server (see README).
  */
 void InitGame() {
-  // TODO (student): Initialize all your global variables!
+  // Initialize all client-side knowledge structures
+  // We'll maintain the latest observed map as characters
+  // '?' for unknown, '@' for marked mines, '0'-'8' for revealed numbers
+  // Note: We will size containers based on rows/columns globals
   int first_row, first_column;
   std::cin >> first_row >> first_column;
+  g_board.assign(rows, std::string(columns, '?'));
   Execute(first_row, first_column, 0);
 }
 
@@ -51,7 +60,21 @@ void InitGame() {
  *     01?
  */
 void ReadMap() {
-  // TODO (student): Implement me!
+  if (static_cast<int>(g_board.size()) != rows) {
+    g_board.assign(rows, std::string(columns, '?'));
+  }
+  for (int i = 0; i < rows; ++i) {
+    std::string line;
+    std::cin >> line;
+    if (static_cast<int>(line.size()) == columns) {
+      g_board[i] = line;
+    } else {
+      // Fallback to preserve robustness if input malformed
+      for (int j = 0; j < columns && j < static_cast<int>(line.size()); ++j) {
+        g_board[i][j] = line[j];
+      }
+    }
+  }
 }
 
 /**
@@ -61,10 +84,88 @@ void ReadMap() {
  * mind and make your decision here! Caution: you can only execute once in this function.
  */
 void Decide() {
-  // TODO (student): Implement me!
-  // while (true) {
-  //   Execute(0, 0);
-  // }
+  std::vector<std::string>& board = g_board;
+
+  auto in_bounds = [&](int r, int c) { return r >= 0 && r < rows && c >= 0 && c < columns; };
+
+  // 1) Auto-explore when number equals marked neighbors
+  for (int r = 0; r < rows; ++r) {
+    for (int c = 0; c < columns; ++c) {
+      char ch = board[r][c];
+      if (ch >= '0' && ch <= '8') {
+        int number = ch - '0';
+        int marked = 0;
+        int unknown = 0;
+        for (int dr = -1; dr <= 1; ++dr) {
+          for (int dc = -1; dc <= 1; ++dc) {
+            if (dr == 0 && dc == 0) continue;
+            int nr = r + dr, nc = c + dc;
+            if (!in_bounds(nr, nc)) continue;
+            if (board[nr][nc] == '@') ++marked;
+            else if (board[nr][nc] == '?') ++unknown;
+          }
+        }
+        if (marked == number && unknown > 0) {
+          Execute(r, c, 2);
+          return;
+        }
+      }
+    }
+  }
+
+  // 2) Mark mines when number == marked + unknown (all unknown are mines)
+  for (int r = 0; r < rows; ++r) {
+    for (int c = 0; c < columns; ++c) {
+      char ch = board[r][c];
+      if (ch >= '0' && ch <= '8') {
+        int number = ch - '0';
+        int marked = 0;
+        int unknown = 0;
+        int unk_r = -1, unk_c = -1;
+        for (int dr = -1; dr <= 1; ++dr) {
+          for (int dc = -1; dc <= 1; ++dc) {
+            if (dr == 0 && dc == 0) continue;
+            int nr = r + dr, nc = c + dc;
+            if (!in_bounds(nr, nc)) continue;
+            if (board[nr][nc] == '@') ++marked;
+            else if (board[nr][nc] == '?') { ++unknown; unk_r = nr; unk_c = nc; }
+          }
+        }
+        if (unknown > 0 && number == marked + unknown) {
+          Execute(unk_r, unk_c, 1);
+          return;
+        }
+      }
+    }
+  }
+
+  // 3) Visit an unknown cell ? simple heuristic: prefer unknown neighbors of zeros
+  for (int r = 0; r < rows; ++r) {
+    for (int c = 0; c < columns; ++c) {
+      if (board[r][c] == '0') {
+        for (int dr = -1; dr <= 1; ++dr) {
+          for (int dc = -1; dc <= 1; ++dc) {
+            if (dr == 0 && dc == 0) continue;
+            int nr = r + dr, nc = c + dc;
+            if (in_bounds(nr, nc) && board[nr][nc] == '?') {
+              Execute(nr, nc, 0);
+              return;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 4) Fallback: visit the first unknown cell
+  for (int r = 0; r < rows; ++r) {
+    for (int c = 0; c < columns; ++c) {
+      if (board[r][c] == '?') {
+        Execute(r, c, 0);
+        return;
+      }
+    }
+  }
 }
 
 #endif

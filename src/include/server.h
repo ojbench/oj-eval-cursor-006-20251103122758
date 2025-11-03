@@ -16,6 +16,57 @@ int total_mines;  // The count of mines of the game map. You MUST NOT modify its
                   // variable in function InitMap. It will be used in the advanced task.
 int game_state;  // The state of the game, 0 for continuing, 1 for winning, -1 for losing. You MUST NOT modify its name.
 
+// Internal game state
+static bool is_mine[35][35];
+static bool is_visited[35][35];
+static bool is_marked[35][35];
+static int adjacent_mine_count[35][35];
+
+static inline bool InBounds(int r, int c) {
+  return r >= 0 && r < rows && c >= 0 && c < columns;
+}
+
+static inline int CountAdjacentMines(int r, int c) {
+  int count = 0;
+  for (int dr = -1; dr <= 1; ++dr) {
+    for (int dc = -1; dc <= 1; ++dc) {
+      if (dr == 0 && dc == 0) continue;
+      int nr = r + dr, nc = c + dc;
+      if (InBounds(nr, nc) && is_mine[nr][nc]) {
+        ++count;
+      }
+    }
+  }
+  return count;
+}
+
+static void FloodFillVisit(int r, int c) {
+  if (!InBounds(r, c)) return;
+  if (is_visited[r][c] || is_marked[r][c]) return;
+  if (is_mine[r][c]) return;
+  is_visited[r][c] = true;
+  if (adjacent_mine_count[r][c] != 0) return;
+  for (int dr = -1; dr <= 1; ++dr) {
+    for (int dc = -1; dc <= 1; ++dc) {
+      if (dr == 0 && dc == 0) continue;
+      int nr = r + dr, nc = c + dc;
+      if (!InBounds(nr, nc)) continue;
+      if (!is_visited[nr][nc] && !is_marked[nr][nc] && !is_mine[nr][nc]) {
+        FloodFillVisit(nr, nc);
+      }
+    }
+  }
+}
+
+static inline bool AllSafeVisited() {
+  for (int i = 0; i < rows; ++i) {
+    for (int j = 0; j < columns; ++j) {
+      if (!is_mine[i][j] && !is_visited[i][j]) return false;
+    }
+  }
+  return true;
+}
+
 /**
  * @brief The definition of function InitMap()
  *
@@ -30,7 +81,29 @@ int game_state;  // The state of the game, 0 for continuing, 1 for winning, -1 f
  */
 void InitMap() {
   std::cin >> rows >> columns;
-  // TODO (student): Implement me!
+  total_mines = 0;
+  game_state = 0;
+  for (int i = 0; i < rows; ++i) {
+    for (int j = 0; j < columns; ++j) {
+      is_mine[i][j] = false;
+      is_visited[i][j] = false;
+      is_marked[i][j] = false;
+      adjacent_mine_count[i][j] = 0;
+    }
+  }
+  for (int i = 0; i < rows; ++i) {
+    std::string line;
+    std::cin >> line;
+    for (int j = 0; j < columns; ++j) {
+      is_mine[i][j] = (line[j] == 'X');
+      if (is_mine[i][j]) ++total_mines;
+    }
+  }
+  for (int i = 0; i < rows; ++i) {
+    for (int j = 0; j < columns; ++j) {
+      adjacent_mine_count[i][j] = CountAdjacentMines(i, j);
+    }
+  }
 }
 
 /**
@@ -64,7 +137,19 @@ void InitMap() {
  * @note For invalid operation, you should not do anything.
  */
 void VisitBlock(int r, int c) {
-  // TODO (student): Implement me!
+  if (game_state != 0) return;
+  if (!InBounds(r, c)) return;
+  if (is_visited[r][c] || is_marked[r][c]) {
+    game_state = 0;
+    return;
+  }
+  if (is_mine[r][c]) {
+    is_visited[r][c] = true;  // reveal the mine that caused failure
+    game_state = -1;
+    return;
+  }
+  FloodFillVisit(r, c);
+  game_state = AllSafeVisited() ? 1 : 0;
 }
 
 /**
@@ -101,7 +186,19 @@ void VisitBlock(int r, int c) {
  * @note For invalid operation, you should not do anything.
  */
 void MarkMine(int r, int c) {
-  // TODO (student): Implement me!
+  if (game_state != 0) return;
+  if (!InBounds(r, c)) return;
+  if (is_visited[r][c] || is_marked[r][c]) {
+    game_state = 0;
+    return;
+  }
+  if (is_mine[r][c]) {
+    is_marked[r][c] = true;
+    game_state = 0;
+  } else {
+    // Wrong marking causes immediate failure
+    game_state = -1;
+  }
 }
 
 /**
@@ -121,7 +218,33 @@ void MarkMine(int r, int c) {
  * And the game ends (and player wins).
  */
 void AutoExplore(int r, int c) {
-  // TODO (student): Implement me!
+  if (game_state != 0) return;
+  if (!InBounds(r, c)) return;
+  if (!is_visited[r][c]) return;
+  if (is_mine[r][c]) return;
+  int required = adjacent_mine_count[r][c];
+  int marked_adjacent = 0;
+  for (int dr = -1; dr <= 1; ++dr) {
+    for (int dc = -1; dc <= 1; ++dc) {
+      if (dr == 0 && dc == 0) continue;
+      int nr = r + dr, nc = c + dc;
+      if (!InBounds(nr, nc)) continue;
+      if (is_marked[nr][nc]) ++marked_adjacent;
+    }
+  }
+  if (marked_adjacent != required) return;
+  for (int dr = -1; dr <= 1; ++dr) {
+    for (int dc = -1; dc <= 1; ++dc) {
+      if (dr == 0 && dc == 0) continue;
+      int nr = r + dr, nc = c + dc;
+      if (!InBounds(nr, nc)) continue;
+      if (!is_visited[nr][nc] && !is_marked[nr][nc] && !is_mine[nr][nc]) {
+        FloodFillVisit(nr, nc);
+        if (game_state != -1 && AllSafeVisited()) game_state = 1;
+      }
+    }
+  }
+  if (game_state == 0) game_state = AllSafeVisited() ? 1 : 0;
 }
 
 /**
@@ -134,7 +257,21 @@ void AutoExplore(int r, int c) {
  * @note If the player wins, we consider that ALL mines are correctly marked.
  */
 void ExitGame() {
-  // TODO (student): Implement me!
+  int visited_non_mines = 0;
+  int correctly_marked_mines = 0;
+  for (int i = 0; i < rows; ++i) {
+    for (int j = 0; j < columns; ++j) {
+      if (is_visited[i][j] && !is_mine[i][j]) ++visited_non_mines;
+      if (is_marked[i][j] && is_mine[i][j]) ++correctly_marked_mines;
+    }
+  }
+  if (game_state == 1) {
+    std::cout << "YOU WIN!" << std::endl;
+    std::cout << visited_non_mines << " " << total_mines << std::endl;
+  } else {
+    std::cout << "GAME OVER!" << std::endl;
+    std::cout << visited_non_mines << " " << correctly_marked_mines << std::endl;
+  }
   exit(0);  // Exit the game immediately
 }
 
@@ -163,7 +300,30 @@ void ExitGame() {
  * @note Use std::cout to print the game map, especially when you want to try the advanced task!!!
  */
 void PrintMap() {
-  // TODO (student): Implement me!
+  for (int i = 0; i < rows; ++i) {
+    for (int j = 0; j < columns; ++j) {
+      char ch = '?';
+      if (game_state == 1) {
+        if (is_mine[i][j]) {
+          ch = '@';
+        } else if (is_visited[i][j]) {
+          ch = static_cast<char>('0' + adjacent_mine_count[i][j]);
+        } else {
+          ch = '?';
+        }
+      } else {
+        if (is_marked[i][j]) {
+          ch = is_mine[i][j] ? '@' : 'X';
+        } else if (is_visited[i][j]) {
+          ch = is_mine[i][j] ? 'X' : static_cast<char>('0' + adjacent_mine_count[i][j]);
+        } else {
+          ch = '?';
+        }
+      }
+      std::cout << ch;
+    }
+    std::cout << std::endl;
+  }
 }
 
 #endif
