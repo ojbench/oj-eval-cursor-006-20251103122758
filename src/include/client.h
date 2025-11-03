@@ -157,14 +157,67 @@ void Decide() {
     }
   }
 
-  // 4) Fallback: visit the first unknown cell
+  // 4) Fallback: choose an unknown cell with minimal estimated risk
+  int total_unknown = 0;
+  int total_marked = 0;
   for (int r = 0; r < rows; ++r) {
     for (int c = 0; c < columns; ++c) {
-      if (board[r][c] == '?') {
-        Execute(r, c, 0);
-        return;
+      total_unknown += (board[r][c] == '?');
+      total_marked += (board[r][c] == '@');
+    }
+  }
+  double global_risk = 1.0;
+  if (total_unknown > 0) {
+    int remaining_mines = total_mines - total_marked;
+    if (remaining_mines < 0) remaining_mines = 0;
+    global_risk = static_cast<double>(remaining_mines) / static_cast<double>(total_unknown);
+  }
+
+  double best_risk = 2.0;
+  int best_r = -1, best_c = -1;
+  for (int r = 0; r < rows; ++r) {
+    for (int c = 0; c < columns; ++c) {
+      if (board[r][c] != '?') continue;
+      double cell_risk = -1.0;
+      // Use the maximum local constraint risk among adjacent numbers; fall back to global risk
+      for (int dr = -1; dr <= 1; ++dr) {
+        for (int dc = -1; dc <= 1; ++dc) {
+          if (dr == 0 && dc == 0) continue;
+          int nr = r + dr, nc = c + dc;
+          if (!in_bounds(nr, nc)) continue;
+          char ch2 = board[nr][nc];
+          if (ch2 >= '0' && ch2 <= '8') {
+            int number = ch2 - '0';
+            int marked = 0;
+            int unknown = 0;
+            for (int ddr = -1; ddr <= 1; ++ddr) {
+              for (int ddc = -1; ddc <= 1; ++ddc) {
+                if (ddr == 0 && ddc == 0) continue;
+                int rr = nr + ddr, cc = nc + ddc;
+                if (!in_bounds(rr, cc)) continue;
+                if (board[rr][cc] == '@') ++marked;
+                else if (board[rr][cc] == '?') ++unknown;
+              }
+            }
+            int remaining = number - marked;
+            if (remaining < 0) remaining = 0;
+            if (unknown > 0) {
+              double local = static_cast<double>(remaining) / static_cast<double>(unknown);
+              if (local > cell_risk) cell_risk = local;
+            }
+          }
+        }
+      }
+      if (cell_risk < 0.0) cell_risk = global_risk;
+      if (cell_risk < best_risk) {
+        best_risk = cell_risk;
+        best_r = r; best_c = c;
       }
     }
+  }
+  if (best_r != -1) {
+    Execute(best_r, best_c, 0);
+    return;
   }
 }
 
